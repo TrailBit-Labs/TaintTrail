@@ -17,13 +17,13 @@ echo ""
 echo "═══════════════════════════════════════════════════"
 echo "1️⃣  HAIRCUT METHODOLOGY (Industry Standard)"
 echo "═══════════════════════════════════════════════════"
-python3 "$(dirname "$0")/scripts/taint_analysis.py" "$DEMO_TX" --method haircut --hops 2
+python3 "$(dirname "$0")/taint_analysis.py" "$DEMO_TX" --method haircut --hops 2
 
 echo ""
 echo "═══════════════════════════════════════════════════"
 echo "2️⃣  METHODOLOGY COMPARISON"
 echo "═══════════════════════════════════════════════════"
-python3 "$(dirname "$0")/scripts/taint_analysis.py" "$DEMO_TX" --compare --hops 2
+python3 "$(dirname "$0")/taint_analysis.py" "$DEMO_TX" --compare --hops 2
 
 echo ""
 echo "═══════════════════════════════════════════════════"
@@ -31,7 +31,7 @@ echo "📚 Newsletter Reference:"
 echo "   skills/bitcoin-heuristics/references/issue4-taint-analysis.md"
 echo ""
 echo "🛠️  Usage:"
-echo "   python3 scripts/taint_analysis.py <txid> --method haircut --hops 3"
-echo "   python3 scripts/taint_analysis.py <txid> --compare"
-echo "   python3 scripts/taint_analysis.py <txid> --json"
+echo "   python3 taint_analysis.py <txid> --method haircut --hops 3"
+echo "   python3 taint_analysis.py <txid> --compare"
+echo "   python3 taint_analysis.py <txid> --json"
 echo "═══════════════════════════════════════════════════"
