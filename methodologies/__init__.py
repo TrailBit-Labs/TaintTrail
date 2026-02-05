@@ -9,9 +9,11 @@ Returns a list of taint percentages, one per output.
 from methodologies.poison import calculate_taint as poison
 from methodologies.haircut import calculate_taint as haircut
 from methodologies.pro_rata import calculate_taint as pro_rata
+from methodologies.fifo import calculate_taint as fifo
 
 METHODOLOGIES = {
     "poison": poison,
     "haircut": haircut,
     "pro_rata": pro_rata,
+    "fifo": fifo,
 }

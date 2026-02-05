@@ -98,6 +98,15 @@ class TaintAnalyzer:
         Similar to haircut but tracks absolute tainted amounts.
         """
         return self._analyze("pro_rata", max_hops, max_txs)
+
+    def analyze_fifo(self, max_hops: int = 3, max_txs: int = 50) -> dict:
+        """
+        FIFO methodology: First-in-first-out taint tracking.
+        Tainted satoshis are consumed sequentially across outputs in order.
+        First output absorbs taint until saturated, then the next, etc.
+        Produces distinctly different results from haircut/pro-rata.
+        """
+        return self._analyze("fifo", max_hops, max_txs)
     
     def _analyze(self, methodology: str, max_hops: int, max_txs: int) -> dict:
         """Core analysis loop."""
@@ -291,13 +300,15 @@ def compare_methodologies(txid: str, max_hops: int = 2) -> dict:
         "comparison": {},
     }
     
-    for method in ["poison", "haircut", "pro_rata"]:
+    for method in ["poison", "haircut", "pro_rata", "fifo"]:
         if method == "poison":
             report = analyzer.analyze_poison(max_hops)
         elif method == "haircut":
             report = analyzer.analyze_haircut(max_hops)
-        else:
+        elif method == "pro_rata":
             report = analyzer.analyze_pro_rata(max_hops)
+        else:
+            report = analyzer.analyze_fifo(max_hops)
         
         if "error" not in report:
             results["comparison"][method] = {
@@ -316,17 +327,19 @@ def main():
         epilog="""
 Methodologies:
   poison   - Binary: any tainted input = 100% tainted outputs
-  haircut  - Proportional: taint% = tainted_value / total_value  
+  haircut  - Proportional: taint% = tainted_value / total_value
   pro_rata - Weighted distribution across outputs
+  fifo     - First-in-first-out: taint consumed sequentially by outputs
 
 Examples:
   taint_analysis.py <txid> --method haircut --hops 3
+  taint_analysis.py <txid> --method fifo --hops 2
   taint_analysis.py <txid> --compare
         """,
         formatter_class=argparse.RawDescriptionHelpFormatter
     )
     parser.add_argument("txid", help="Source transaction ID (the 'dirty' funds)")
-    parser.add_argument("--method", choices=["poison", "haircut", "pro_rata"], 
+    parser.add_argument("--method", choices=["poison", "haircut", "pro_rata", "fifo"],
                         default="haircut", help="Taint methodology")
     parser.add_argument("--hops", type=int, default=2, help="Max hops to trace (default: 2)")
     parser.add_argument("--max-txs", type=int, default=30, help="Max transactions to analyze")
@@ -356,8 +369,10 @@ Examples:
         result = analyzer.analyze_poison(args.hops, args.max_txs)
     elif args.method == "haircut":
         result = analyzer.analyze_haircut(args.hops, args.max_txs)
-    else:
+    elif args.method == "pro_rata":
         result = analyzer.analyze_pro_rata(args.hops, args.max_txs)
+    else:
+        result = analyzer.analyze_fifo(args.hops, args.max_txs)
     
     if "error" in result:
         print(f"Error: {result['error']}", file=sys.stderr)
