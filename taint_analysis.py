@@ -18,6 +18,7 @@ from collections import defaultdict
 from dataclasses import dataclass, asdict
 from typing import Optional
 from datetime import datetime
+from methodologies import METHODOLOGIES
 
 
 @dataclass
@@ -193,27 +194,22 @@ class TaintAnalyzer:
         if total_input_value == 0:
             return
         
-        # Calculate output taint based on methodology
-        if methodology == "poison":
-            # Binary: any taint = 100% tainted
-            output_taint = 100.0 if tainted_input_value > 0 else 0.0
-        
-        elif methodology == "haircut":
-            # Proportional: taint% = tainted value / total value
-            output_taint = (tainted_input_value / total_input_value) * 100
-        
-        elif methodology == "pro_rata":
-            # Pro-rata: similar to haircut but can be refined
-            output_taint = (tainted_input_value / total_input_value) * 100
-        
-        else:
-            output_taint = 0.0
-        
-        if output_taint < 0.01:  # Below threshold, ignore
+        # Calculate output taint based on methodology (strategy pattern)
+        calculate = METHODOLOGIES.get(methodology)
+        if calculate is None:
             return
-        
-        # Apply taint to all outputs
+        taint_percentages = calculate(tainted_input_value, total_input_value, outputs)
+
+        # Check if all outputs are below threshold
+        if all(tp < 0.01 for tp in taint_percentages):
+            return
+
+        # Apply per-output taint percentages
+        outputs_tainted = 0
         for i, vout in enumerate(outputs):
+            output_taint = taint_percentages[i]
+            if output_taint < 0.01:  # Below threshold, skip this output
+                continue
             key = self._output_key(txid, i)
             self.tainted_outputs[key] = TaintedOutput(
                 txid=txid,
@@ -225,14 +221,15 @@ class TaintAnalyzer:
                 methodology=methodology,
                 hop=hop
             )
-        
+            outputs_tainted += 1
+
         self.trace_log.append({
             "action": "propagate",
             "hop": hop,
             "txid": txid[:16] + "...",
             "input_taint_pct": round((tainted_input_value / total_input_value) * 100, 2),
-            "output_taint_pct": round(output_taint, 2),
-            "outputs_tainted": len(outputs),
+            "output_taint_pct": round(max(taint_percentages), 2),
+            "outputs_tainted": outputs_tainted,
         })
     
     def _generate_report(self, methodology: str) -> dict:
