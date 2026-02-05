@@ -374,7 +374,7 @@ Examples:
     parser.add_argument("txid", help="Source transaction ID (the 'dirty' funds)")
     parser.add_argument("--method", choices=["poison", "haircut", "pro_rata", "fifo"],
                         default="haircut", help="Taint methodology")
-    parser.add_argument("--hops", type=int, default=2, help="Max hops to trace (default: 2)")
+    parser.add_argument("--hops", type=int, default=None, help="Max hops to trace (will prompt if not specified)")
     parser.add_argument("--max-txs", type=int, default=30, help="Max transactions to analyze")
     parser.add_argument("--label", default="Tainted Source", help="Label for source")
     parser.add_argument("--compare", action="store_true", help="Compare all methodologies")
@@ -387,8 +387,24 @@ Examples:
                         help="Enable audit logging to DIR (default: ./audit_logs)")
     parser.add_argument("--min-confidence", type=float, default=0.0,
                         help="Minimum confidence score to include in output (0.0-1.0)")
+    parser.add_argument("-o", "--output-file", help="Write output to file instead of stdout")
 
     args = parser.parse_args()
+
+    if args.hops is None:
+        while True:
+            try:
+                hops_input = input("How many hops deep? [default: 2]: ").strip()
+                if hops_input == "":
+                    args.hops = 2
+                    break
+                args.hops = int(hops_input)
+                if args.hops < 0:
+                    print("Please enter a non-negative number.")
+                    continue
+                break
+            except ValueError:
+                print("Please enter a valid number.")
 
     # --json is a deprecated shortcut for --output-format json
     output_format = args.output_format
@@ -398,7 +414,7 @@ Examples:
     if args.compare:
         result = compare_methodologies(args.txid, args.hops)
         if output_format == "json":
-            print(json.dumps(result, indent=2))
+            output_str = json.dumps(result, indent=2)
         elif output_format == "csv":
             # For compare mode, build a simple CSV of the comparison table
             from exports.csv_export import export_csv as _csv
@@ -409,7 +425,7 @@ Examples:
             for method, data in result.get("comparison", {}).items():
                 writer.writerow([method, data["total_tainted_btc"],
                                  data["tainted_outputs"], data["txs_analyzed"]])
-            print(buf.getvalue(), end="")
+            output_str = buf.getvalue().rstrip("\n")
         elif output_format == "markdown":
             lines = [
                 "# Taint Methodology Comparison",
@@ -425,15 +441,25 @@ Examples:
                     f"| {method} | {data['total_tainted_btc']:.8f} "
                     f"| {data['tainted_outputs']} | {data['txs_analyzed']} |"
                 )
-            print("\n".join(lines))
+            output_str = "\n".join(lines)
         else:
-            print(f"\nTaint Methodology Comparison")
-            print(f"   Source: {args.txid[:20]}...")
-            print(f"   Max hops: {args.hops}\n")
-            print(f"   {'Method':<12} {'Tainted BTC':<15} {'Outputs':<10} {'TXs':<6}")
-            print(f"   {'-'*45}")
+            lines = [
+                f"\nTaint Methodology Comparison",
+                f"   Source: {args.txid[:20]}...",
+                f"   Max hops: {args.hops}\n",
+                f"   {'Method':<12} {'Tainted BTC':<15} {'Outputs':<10} {'TXs':<6}",
+                f"   {'-'*45}",
+            ]
             for method, data in result.get("comparison", {}).items():
-                print(f"   {method:<12} {data['total_tainted_btc']:<15.8f} {data['tainted_outputs']:<10} {data['txs_analyzed']:<6}")
+                lines.append(f"   {method:<12} {data['total_tainted_btc']:<15.8f} {data['tainted_outputs']:<10} {data['txs_analyzed']:<6}")
+            output_str = "\n".join(lines)
+
+        if args.output_file:
+            with open(args.output_file, 'w') as f:
+                f.write(output_str + "\n")
+            print(f"Output written to {args.output_file}")
+        else:
+            print(output_str)
 
         # Audit logging for compare mode
         if args.audit_dir:
@@ -471,16 +497,16 @@ Examples:
 
     # Dispatch to the appropriate exporter
     if output_format == "json":
-        print(json.dumps(result, indent=2))
+        output_str = json.dumps(result, indent=2)
     elif output_format == "csv":
         from exports.csv_export import export_csv
-        print(export_csv(result), end="")
+        output_str = export_csv(result).rstrip("\n")
     elif output_format == "markdown":
         from exports.markdown_export import export_markdown
-        print(export_markdown(result))
+        output_str = export_markdown(result)
     else:
         from exports.text_export import export_text
-        print(export_text(result))
+        output_str = export_text(result)
 
         # ASCII taint map visualization (text mode only)
         if args.visualize and result.get('tainted_outputs'):
@@ -493,7 +519,14 @@ Examples:
                     "taint_pct": o.get("taint_percent", 0.0),
                     "value": o.get("value_sat", 0),
                 })
-            print(f"\n{render_taint_map(map_entries)}")
+            output_str += f"\n{render_taint_map(map_entries)}"
+
+    if args.output_file:
+        with open(args.output_file, 'w') as f:
+            f.write(output_str + "\n")
+        print(f"Output written to {args.output_file}")
+    else:
+        print(output_str)
 
     # Audit logging for single-methodology analysis
     if args.audit_dir:
