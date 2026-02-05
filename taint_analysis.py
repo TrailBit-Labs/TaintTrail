@@ -385,6 +385,8 @@ Examples:
     parser.add_argument("--audit-dir", nargs="?", const="./audit_logs",
                         default=None, metavar="DIR",
                         help="Enable audit logging to DIR (default: ./audit_logs)")
+    parser.add_argument("--min-confidence", type=float, default=0.0,
+                        help="Minimum confidence score to include in output (0.0-1.0)")
 
     args = parser.parse_args()
 
@@ -459,6 +461,13 @@ Examples:
     if "error" in result:
         print(f"Error: {result['error']}", file=sys.stderr)
         sys.exit(1)
+
+    # Apply --min-confidence filter (output-stage only, does not affect analysis)
+    if args.min_confidence > 0.0:
+        result["tainted_outputs"] = [
+            o for o in result["tainted_outputs"]
+            if o.get("confidence", 0.0) >= args.min_confidence
+        ]
 
     # Dispatch to the appropriate exporter
     if output_format == "json":
