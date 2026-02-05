@@ -382,6 +382,9 @@ Examples:
     parser.add_argument("--output-format", choices=["text", "json", "csv", "markdown"],
                         default="text", help="Output format (default: text)")
     parser.add_argument("--visualize", action="store_true", help="Show ASCII visualization")
+    parser.add_argument("--audit-dir", nargs="?", const="./audit_logs",
+                        default=None, metavar="DIR",
+                        help="Enable audit logging to DIR (default: ./audit_logs)")
 
     args = parser.parse_args()
 
@@ -429,6 +432,17 @@ Examples:
             print(f"   {'-'*45}")
             for method, data in result.get("comparison", {}).items():
                 print(f"   {method:<12} {data['total_tainted_btc']:<15.8f} {data['tainted_outputs']:<10} {data['txs_analyzed']:<6}")
+
+        # Audit logging for compare mode
+        if args.audit_dir:
+            from audit import AuditLogger
+            audit = AuditLogger(log_dir=args.audit_dir)
+            audit.log_analysis(
+                txid=args.txid,
+                methodology="compare",
+                hops=args.hops,
+                result_summary=result.get("comparison", {}),
+            )
         return
 
     analyzer = TaintAnalyzer(args.txid, args.label)
@@ -471,6 +485,17 @@ Examples:
                     "value": o.get("value_sat", 0),
                 })
             print(f"\n{render_taint_map(map_entries)}")
+
+    # Audit logging for single-methodology analysis
+    if args.audit_dir:
+        from audit import AuditLogger
+        audit = AuditLogger(log_dir=args.audit_dir)
+        audit.log_analysis(
+            txid=args.txid,
+            methodology=args.method,
+            hops=args.hops,
+            result_summary=result.get("summary", {}),
+        )
 
 
 if __name__ == "__main__":
