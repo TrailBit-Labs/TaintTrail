@@ -1,0 +1,48 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# Environments
+.env
+.venv
+env/
+venv/
+
+# Analysis results (may contain sensitive data)
+results/
+exports/
+investigations/
+*.pdf
+*.json
+!.claude/settings.json
+
+# Logs
+*.log
+logs/
+
+# Data files (blockchain data can be large)
+data/blockchain/
+data/cache/
+*.dat
+*.bin
+
+# API keys and credentials
+config/credentials.json
+.env.local
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Temporary files
+temp/
+tmp/
