@@ -13,7 +13,6 @@ venv/
 
 # Analysis results (may contain sensitive data)
 results/
-exports/
 investigations/
 *.pdf
 *.json
