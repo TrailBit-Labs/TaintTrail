@@ -19,6 +19,7 @@ from dataclasses import dataclass, asdict
 from typing import Optional
 from datetime import datetime
 from methodologies import METHODOLOGIES
+from scoring import calculate_confidence, calculate_risk_score
 
 
 @dataclass
@@ -32,6 +33,8 @@ class TaintedOutput:
     taint_source: str
     methodology: str
     hop: int
+    confidence: float = 0.0
+    risk: str = "minimal"
 
 
 def fetch_tx(txid: str) -> Optional[dict]:
@@ -119,8 +122,21 @@ class TaintAnalyzer:
         if not source_tx or "error" in source_tx:
             return {"error": f"Cannot fetch source tx: {source_tx.get('error', 'Unknown')}"}
         
-        for i, vout in enumerate(source_tx.get("vout", [])):
+        source_outputs = source_tx.get("vout", [])
+        source_inputs = source_tx.get("vin", [])
+        for i, vout in enumerate(source_outputs):
             key = self._output_key(self.source_txid, i)
+            conf = calculate_confidence(
+                hop=0,
+                taint_pct=100.0,
+                num_inputs=max(len(source_inputs), 1),
+                num_outputs=max(len(source_outputs), 1),
+            )
+            risk = calculate_risk_score(
+                taint_pct=100.0,
+                confidence=conf,
+                hop=0,
+            )
             self.tainted_outputs[key] = TaintedOutput(
                 txid=self.source_txid,
                 vout_index=i,
@@ -129,7 +145,9 @@ class TaintAnalyzer:
                 taint_percent=100.0,
                 taint_source=self.source_label,
                 methodology=methodology,
-                hop=0
+                hop=0,
+                confidence=conf,
+                risk=risk,
             )
         
         self.analyzed_txs.add(self.source_txid)
@@ -220,6 +238,17 @@ class TaintAnalyzer:
             if output_taint < 0.01:  # Below threshold, skip this output
                 continue
             key = self._output_key(txid, i)
+            confidence = calculate_confidence(
+                hop=hop,
+                taint_pct=output_taint,
+                num_inputs=len(inputs),
+                num_outputs=len(outputs),
+            )
+            risk = calculate_risk_score(
+                taint_pct=output_taint,
+                confidence=confidence,
+                hop=hop,
+            )
             self.tainted_outputs[key] = TaintedOutput(
                 txid=txid,
                 vout_index=i,
@@ -228,7 +257,9 @@ class TaintAnalyzer:
                 taint_percent=round(output_taint, 2),
                 taint_source=self.source_label,
                 methodology=methodology,
-                hop=hop
+                hop=hop,
+                confidence=confidence,
+                risk=risk,
             )
             outputs_tainted += 1
 
@@ -280,6 +311,7 @@ class TaintAnalyzer:
                     "count": len(outputs),
                     "total_btc": round(sum(o.value_sat for o in outputs) / 1e8, 8),
                     "avg_taint_pct": round(sum(o.taint_percent for o in outputs) / len(outputs), 2),
+                    "avg_confidence": round(sum(o.confidence for o in outputs) / len(outputs), 4),
                 }
                 for hop, outputs in sorted(by_hop.items())
             },
@@ -287,6 +319,7 @@ class TaintAnalyzer:
                 {"address": addr[:20] + "..." if len(addr) > 20 else addr, "tainted_btc": round(val / 1e8, 8)}
                 for addr, val in top_addresses
             ],
+            "tainted_outputs": [asdict(o) for o in self.tainted_outputs.values()],
             "trace_log": self.trace_log[:20],  # First 20 entries
         }
 
@@ -394,12 +427,23 @@ Examples:
         if result['by_hop']:
             print(f"\n📊 By Hop:")
             for hop, data in result['by_hop'].items():
-                print(f"   Hop {hop}: {data['count']} outputs, {data['total_btc']:.8f} BTC, avg taint: {data['avg_taint_pct']}%")
+                print(f"   Hop {hop}: {data['count']} outputs, {data['total_btc']:.8f} BTC, avg taint: {data['avg_taint_pct']}%, avg confidence: {data['avg_confidence']}")
         
         if result['top_tainted_addresses']:
             print(f"\n🎯 Top Tainted Addresses:")
             for i, addr in enumerate(result['top_tainted_addresses'][:5], 1):
                 print(f"   {i}. {addr['address']} — {addr['tainted_btc']:.8f} BTC")
+
+        # Show risk summary from tainted outputs
+        if result.get('tainted_outputs'):
+            risk_counts = {}
+            for o in result['tainted_outputs']:
+                r = o.get('risk', 'minimal')
+                risk_counts[r] = risk_counts.get(r, 0) + 1
+            print(f"\n⚠️  Risk Summary:")
+            for level in ["critical", "high", "medium", "low", "minimal"]:
+                if level in risk_counts:
+                    print(f"   {level.upper()}: {risk_counts[level]} outputs")
 
 
 if __name__ == "__main__":
