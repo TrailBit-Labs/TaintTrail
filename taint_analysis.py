@@ -379,7 +379,8 @@ Examples:
     parser.add_argument("--label", default="Tainted Source", help="Label for source")
     parser.add_argument("--compare", action="store_true", help="Compare all methodologies")
     parser.add_argument("--json", action="store_true", help="Output raw JSON")
-    
+    parser.add_argument("--visualize", action="store_true", help="Show ASCII visualization")
+
     args = parser.parse_args()
     
     if args.compare:
@@ -444,6 +445,20 @@ Examples:
             for level in ["critical", "high", "medium", "low", "minimal"]:
                 if level in risk_counts:
                     print(f"   {level.upper()}: {risk_counts[level]} outputs")
+
+        # ASCII taint map visualization
+        if args.visualize and result.get('tainted_outputs'):
+            from visualization import render_taint_map
+            # Convert report data to the format expected by render_taint_map
+            map_entries = []
+            for o in result['tainted_outputs']:
+                map_entries.append({
+                    "hop": o.get("hop", 0),
+                    "address": o.get("address", "unknown"),
+                    "taint_pct": o.get("taint_percent", 0.0),
+                    "value": o.get("value_sat", 0),
+                })
+            print(f"\n{render_taint_map(map_entries)}")
 
 
 if __name__ == "__main__":
