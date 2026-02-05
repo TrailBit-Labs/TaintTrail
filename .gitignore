@@ -18,6 +18,7 @@ investigations/
 *.pdf
 *.json
 !.claude/settings.json
+!data/sample_tx.json
 
 # Logs
 *.log

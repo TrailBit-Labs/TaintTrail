@@ -1,0 +1,63 @@
+{
+  "tx_simple": {
+    "txid": "aaaa1111",
+    "vin": [
+      {
+        "txid": "source0000",
+        "vout": 0,
+        "prevout": {"value": 100000, "scriptpubkey_address": "1SourceAddr"}
+      }
+    ],
+    "vout": [
+      {"value": 60000, "scriptpubkey_address": "1OutputA"},
+      {"value": 39000, "scriptpubkey_address": "1OutputB"}
+    ]
+  },
+  "tx_mixed": {
+    "txid": "bbbb2222",
+    "vin": [
+      {
+        "txid": "aaaa1111",
+        "vout": 0,
+        "prevout": {"value": 60000, "scriptpubkey_address": "1OutputA"}
+      },
+      {
+        "txid": "clean0000",
+        "vout": 0,
+        "prevout": {"value": 40000, "scriptpubkey_address": "1CleanAddr"}
+      }
+    ],
+    "vout": [
+      {"value": 50000, "scriptpubkey_address": "1MixedOut1"},
+      {"value": 49000, "scriptpubkey_address": "1MixedOut2"}
+    ]
+  },
+  "tx_three_in_two_out": {
+    "txid": "cccc3333",
+    "vin": [
+      {
+        "txid": "tainted01",
+        "vout": 0,
+        "prevout": {"value": 30000, "scriptpubkey_address": "1Tainted1"}
+      },
+      {
+        "txid": "tainted02",
+        "vout": 1,
+        "prevout": {"value": 20000, "scriptpubkey_address": "1Tainted2"}
+      },
+      {
+        "txid": "clean0001",
+        "vout": 0,
+        "prevout": {"value": 50000, "scriptpubkey_address": "1Clean1"}
+      }
+    ],
+    "vout": [
+      {"value": 45000, "scriptpubkey_address": "1Out1"},
+      {"value": 53000, "scriptpubkey_address": "1Out2"}
+    ]
+  },
+  "outspends_simple": [
+    {"spent": true, "txid": "bbbb2222", "vin": 0},
+    {"spent": false}
+  ]
+}
