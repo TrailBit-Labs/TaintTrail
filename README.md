@@ -1,213 +1,111 @@
-# 🔍 Bitcoin Taint Analysis Tool
+# Bitcoin Taint Analysis Tool
 
-**Professional Bitcoin forensics and transaction tracing utility**
+An educational Bitcoin taint analysis tool that traces funds through the transaction graph using multiple methodologies.
 
-![Status](https://img.shields.io/badge/Status-Active-green)
-![Python](https://img.shields.io/badge/Python-3.7+-blue)
-![Bitcoin](https://img.shields.io/badge/Bitcoin-Forensics-orange)
+Built for the **Bitcoin Heuristics Newsletter** and **TrailBit** research.
 
-## 🎯 Overview
+## What It Does
 
-Professional-grade Bitcoin taint analysis tool implementing multiple methodologies for cryptocurrency forensics and transaction tracing. Built for the **Bitcoin Heuristics Newsletter** and blockchain investigation research.
+Takes a Bitcoin transaction ID, fetches transaction data from [mempool.space](https://mempool.space), and traces how tainted funds propagate through subsequent transactions using BFS graph traversal.
 
-## ⚡ Features
-
-### 🔬 **Analysis Methodologies**
-- **Haircut Taint** - Simple proportional distribution
-- **Pro-Rata Taint** - Weighted distribution across outputs  
-- **FIFO Taint** - First-in-first-out tracking
-- **Multi-Hop Analysis** - Trace through multiple transactions
-
-### 📊 **Visualization**
-- **ASCII Flow Charts** - Transaction flow visualization
-- **Taint Propagation Maps** - Visual taint distribution
-- **Confidence Scoring** - Uncertainty quantification
-- **Export Formats** - JSON, CSV, markdown reports
-
-### 🛡️ **Compliance Features**
-- **Sanctions Screening** - OFAC/EU sanctions integration
-- **Risk Scoring** - Automated risk assessment
-- **Evidence Trail** - Court-ready documentation
-- **Audit Logs** - Complete analysis history
-
-## 🚀 Quick Start
+## Quick Start
 
 ```bash
-# Basic taint analysis
-python3 taint_analysis.py --txid <transaction_id>
+# Run analysis (will prompt for number of hops)
+python3 taint_analysis.py <txid>
 
-# Multi-hop analysis  
-python3 taint_analysis.py --txid <txid> --hops 3
+# Specify method and hops
+python3 taint_analysis.py <txid> --method haircut --hops 3
 
-# Full forensic report
-python3 taint_analysis.py --txid <txid> --method all --export pdf
+# Compare all methodologies side by side
+python3 taint_analysis.py <txid> --compare --hops 3
 
-# Demo mode
+# Run the demo
 ./demo_taint_analysis.sh
 ```
 
-## 📋 Usage Examples
+No dependencies beyond Python 3.7+ standard library.
 
-### Single Transaction Analysis
+## Methodologies
+
+| Method | How It Works |
+|--------|-------------|
+| **Poison** | Binary — any tainted input means 100% tainted outputs |
+| **Haircut** | Proportional — taint% = tainted value / total input value, applied uniformly |
+| **Pro-rata** | Weighted — taint distributed proportional to each output's share of total value |
+| **FIFO** | Sequential — tainted sats consumed by outputs in order until exhausted |
+
 ```bash
-python3 taint_analysis.py \
-  --txid 7c4025... \
-  --method haircut \
-  --output-format json
+python3 taint_analysis.py <txid> --method poison --hops 2
+python3 taint_analysis.py <txid> --method fifo --hops 4
+python3 taint_analysis.py <txid> --compare
 ```
 
-### Multi-Hop Investigation
+## Output Options
+
 ```bash
-python3 taint_analysis.py \
-  --txid 7c4025... \
-  --hops 5 \
-  --method pro-rata \
-  --min-confidence 0.1 \
-  --export-report investigation_001.pdf
+# Text report (default)
+python3 taint_analysis.py <txid> --method haircut --hops 2
+
+# JSON
+python3 taint_analysis.py <txid> --json
+
+# CSV
+python3 taint_analysis.py <txid> --output-format csv
+
+# Markdown
+python3 taint_analysis.py <txid> --output-format markdown
+
+# ASCII visualization
+python3 taint_analysis.py <txid> --visualize
+
+# Save to file
+python3 taint_analysis.py <txid> -o report.txt
 ```
 
-### Batch Analysis
-```bash
-python3 taint_analysis.py \
-  --input-file transactions.txt \
-  --method all \
-  --parallel 4 \
-  --output-dir results/
+## Other Features
+
+- **Confidence scoring** — decay by hop distance, mixing penalty, fan-out penalty
+- **Risk scoring** — critical/high/medium/low/minimal based on taint%, confidence, and proximity
+- **Min-confidence filter** — `--min-confidence 0.3` to focus on high-confidence results
+- **Audit logging** — `--audit-dir ./logs/` writes JSONL logs for each analysis run
+- **Interactive hops** — omit `--hops` and you'll be prompted
+
+## Project Structure
+
+```
+├── taint_analysis.py       # Main CLI and analysis engine
+├── methodologies/          # Taint calculation strategies
+│   ├── poison.py
+│   ├── haircut.py
+│   ├── pro_rata.py
+│   └── fifo.py
+├── scoring.py              # Confidence and risk scoring
+├── visualization.py        # ASCII flow charts and taint maps
+├── exports/                # CSV, markdown, text formatters
+├── audit.py                # JSONL audit logger
+├── tests/                  # Unit tests (50 tests)
+├── data/                   # Sample transaction data for tests
+└── demo_taint_analysis.sh  # Demo script
 ```
 
-## 🔬 Methodologies
+## Methodology References
 
-### **Haircut Taint**
-Simple proportional distribution:
-- Each output receives taint proportional to its value
-- Fast computation, conservative estimates
-- Good for preliminary analysis
+Based on ideas from:
+- Reid & Harrigan (2011) — "An Analysis of Anonymity in Bitcoin"
+- Ron & Shamir (2012) — "Quantitative Analysis of Bitcoin"
+- Meiklejohn et al. (2013) — "A Fistful of Bitcoins"
 
-### **Pro-Rata Taint** 
-Weighted distribution model:
-- Considers input/output relationships
-- More accurate for complex transactions
-- Industry standard methodology
+## Disclaimer
 
-### **FIFO Taint**
-First-in-first-out tracking:
-- Temporal ordering of inputs/outputs
-- Useful for specific investigation patterns
-- Higher computational complexity
+This is an educational tool for learning about blockchain analysis. It is not professional forensic software. Results should not be treated as accurate or authoritative. Use it to learn, experiment, and explore — do whatever you want with it.
 
-## 📊 Output Formats
+Not for unauthorized surveillance or illegal activities.
 
-### **JSON Report**
-```json
-{
-  "analysis_id": "taint_20240202_001",
-  "methodology": "pro-rata",
-  "confidence": 0.87,
-  "taint_distribution": {...},
-  "risk_score": "medium"
-}
-```
+## License
 
-### **Markdown Summary**
-- Executive summary
-- Key findings  
-- Visual flow charts
-- Methodology notes
-
-### **PDF Report**
-- Court-ready documentation
-- Professional formatting
-- Charts and visualizations
-- Evidence chain documentation
-
-## 🎓 Educational Use
-
-Perfect for:
-- **Blockchain Forensics Training** - Learn investigation techniques
-- **Academic Research** - Cite-ready methodologies  
-- **Newsletter Content** - Real-world examples
-- **Compliance Testing** - Verify AML procedures
-
-## 🔧 Technical Details
-
-### **Dependencies**
-- Python 3.7+
-- Requests (API calls)
-- NetworkX (graph analysis)  
-- Matplotlib (visualization)
-- ReportLab (PDF generation)
-
-### **Architecture**
-```
-taint-analysis/
-├── taint_analysis.py      # Main analysis engine
-├── demo_taint_analysis.sh # Demo script
-├── methodologies/         # Analysis algorithms
-├── exports/              # Output formatters
-├── data/                 # Sample datasets
-└── docs/                 # Methodology documentation
-```
-
-### **Performance**
-- **Single Transaction** - < 2 seconds
-- **5-Hop Analysis** - < 30 seconds  
-- **Batch Processing** - 100+ tx/minute
-- **Memory Usage** - < 50MB typical
-
-## 📚 Methodology References
-
-Based on academic research:
-- Reid & Harrigan (2011) - "An Analysis of Anonymity in Bitcoin"
-- Ron & Shamir (2012) - "Quantitative Analysis of Bitcoin"  
-- Meiklejohn et al. (2013) - "A Fistful of Bitcoins"
-- Modern forensics best practices
-
-## ⚖️ Legal Compliance
-
-### **Evidence Standards**
-- **Daubert Criteria** - Scientific methodology
-- **Chain of Custody** - Complete audit trail
-- **Error Rate Quantification** - Statistical confidence
-- **Peer Review** - Published methodologies
-
-### **Privacy Protection**
-- No personal data storage
-- Configurable data retention
-- GDPR-compliant operations
-- Optional anonymization
-
-## 🔍 Integration
-
-### **API Endpoints**
-```python
-# Programmatic access
-from taint_analysis import TaintAnalyzer
-
-analyzer = TaintAnalyzer()
-result = analyzer.analyze(txid, method='pro-rata')
-```
-
-### **Webhook Support**
-- Real-time analysis notifications
-- Integration with investigation platforms
-- Slack/Discord reporting bots
-- Custom webhook endpoints
-
-## 🚨 Disclaimer
-
-This tool is for:
-- ✅ Educational purposes
-- ✅ Academic research  
-- ✅ Compliance testing
-- ✅ Authorized investigations
-
-**Not for:** Unauthorized surveillance, privacy violation, or illegal activities.
-
-## 📄 License
-
-Private research tool - Educational use only.
+Educational use. Do what you want with it.
 
 ---
 
-**Built for the Bitcoin Heuristics Newsletter** 📰  
-*Professional blockchain forensics research and education*
+*Built for the Bitcoin Heuristics Newsletter*

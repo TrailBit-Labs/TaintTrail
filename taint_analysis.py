@@ -18,6 +18,8 @@ from collections import defaultdict
 from dataclasses import dataclass, asdict
 from typing import Optional
 from datetime import datetime
+from methodologies import METHODOLOGIES
+from scoring import calculate_confidence, calculate_risk_score
 
 
 @dataclass
@@ -31,6 +33,8 @@ class TaintedOutput:
     taint_source: str
     methodology: str
     hop: int
+    confidence: float = 0.0
+    risk: str = "minimal"
 
 
 def fetch_tx(txid: str) -> Optional[dict]:
@@ -97,6 +101,15 @@ class TaintAnalyzer:
         Similar to haircut but tracks absolute tainted amounts.
         """
         return self._analyze("pro_rata", max_hops, max_txs)
+
+    def analyze_fifo(self, max_hops: int = 3, max_txs: int = 50) -> dict:
+        """
+        FIFO methodology: First-in-first-out taint tracking.
+        Tainted satoshis are consumed sequentially across outputs in order.
+        First output absorbs taint until saturated, then the next, etc.
+        Produces distinctly different results from haircut/pro-rata.
+        """
+        return self._analyze("fifo", max_hops, max_txs)
     
     def _analyze(self, methodology: str, max_hops: int, max_txs: int) -> dict:
         """Core analysis loop."""
@@ -109,8 +122,21 @@ class TaintAnalyzer:
         if not source_tx or "error" in source_tx:
             return {"error": f"Cannot fetch source tx: {source_tx.get('error', 'Unknown')}"}
         
-        for i, vout in enumerate(source_tx.get("vout", [])):
+        source_outputs = source_tx.get("vout", [])
+        source_inputs = source_tx.get("vin", [])
+        for i, vout in enumerate(source_outputs):
             key = self._output_key(self.source_txid, i)
+            conf = calculate_confidence(
+                hop=0,
+                taint_pct=100.0,
+                num_inputs=max(len(source_inputs), 1),
+                num_outputs=max(len(source_outputs), 1),
+            )
+            risk = calculate_risk_score(
+                taint_pct=100.0,
+                confidence=conf,
+                hop=0,
+            )
             self.tainted_outputs[key] = TaintedOutput(
                 txid=self.source_txid,
                 vout_index=i,
@@ -119,7 +145,9 @@ class TaintAnalyzer:
                 taint_percent=100.0,
                 taint_source=self.source_label,
                 methodology=methodology,
-                hop=0
+                hop=0,
+                confidence=conf,
+                risk=risk,
             )
         
         self.analyzed_txs.add(self.source_txid)
@@ -193,28 +221,34 @@ class TaintAnalyzer:
         if total_input_value == 0:
             return
         
-        # Calculate output taint based on methodology
-        if methodology == "poison":
-            # Binary: any taint = 100% tainted
-            output_taint = 100.0 if tainted_input_value > 0 else 0.0
-        
-        elif methodology == "haircut":
-            # Proportional: taint% = tainted value / total value
-            output_taint = (tainted_input_value / total_input_value) * 100
-        
-        elif methodology == "pro_rata":
-            # Pro-rata: similar to haircut but can be refined
-            output_taint = (tainted_input_value / total_input_value) * 100
-        
-        else:
-            output_taint = 0.0
-        
-        if output_taint < 0.01:  # Below threshold, ignore
+        # Calculate output taint based on methodology (strategy pattern)
+        calculate = METHODOLOGIES.get(methodology)
+        if calculate is None:
             return
-        
-        # Apply taint to all outputs
+        taint_percentages = calculate(tainted_input_value, total_input_value, outputs)
+
+        # Check if all outputs are below threshold
+        if all(tp < 0.01 for tp in taint_percentages):
+            return
+
+        # Apply per-output taint percentages
+        outputs_tainted = 0
         for i, vout in enumerate(outputs):
+            output_taint = taint_percentages[i]
+            if output_taint < 0.01:  # Below threshold, skip this output
+                continue
             key = self._output_key(txid, i)
+            confidence = calculate_confidence(
+                hop=hop,
+                taint_pct=output_taint,
+                num_inputs=len(inputs),
+                num_outputs=len(outputs),
+            )
+            risk = calculate_risk_score(
+                taint_pct=output_taint,
+                confidence=confidence,
+                hop=hop,
+            )
             self.tainted_outputs[key] = TaintedOutput(
                 txid=txid,
                 vout_index=i,
@@ -223,16 +257,19 @@ class TaintAnalyzer:
                 taint_percent=round(output_taint, 2),
                 taint_source=self.source_label,
                 methodology=methodology,
-                hop=hop
+                hop=hop,
+                confidence=confidence,
+                risk=risk,
             )
-        
+            outputs_tainted += 1
+
         self.trace_log.append({
             "action": "propagate",
             "hop": hop,
             "txid": txid[:16] + "...",
             "input_taint_pct": round((tainted_input_value / total_input_value) * 100, 2),
-            "output_taint_pct": round(output_taint, 2),
-            "outputs_tainted": len(outputs),
+            "output_taint_pct": round(max(taint_percentages), 2),
+            "outputs_tainted": outputs_tainted,
         })
     
     def _generate_report(self, methodology: str) -> dict:
@@ -274,6 +311,7 @@ class TaintAnalyzer:
                     "count": len(outputs),
                     "total_btc": round(sum(o.value_sat for o in outputs) / 1e8, 8),
                     "avg_taint_pct": round(sum(o.taint_percent for o in outputs) / len(outputs), 2),
+                    "avg_confidence": round(sum(o.confidence for o in outputs) / len(outputs), 4),
                 }
                 for hop, outputs in sorted(by_hop.items())
             },
@@ -281,6 +319,7 @@ class TaintAnalyzer:
                 {"address": addr[:20] + "..." if len(addr) > 20 else addr, "tainted_btc": round(val / 1e8, 8)}
                 for addr, val in top_addresses
             ],
+            "tainted_outputs": [asdict(o) for o in self.tainted_outputs.values()],
             "trace_log": self.trace_log[:20],  # First 20 entries
         }
 
@@ -294,13 +333,15 @@ def compare_methodologies(txid: str, max_hops: int = 2) -> dict:
         "comparison": {},
     }
     
-    for method in ["poison", "haircut", "pro_rata"]:
+    for method in ["poison", "haircut", "pro_rata", "fifo"]:
         if method == "poison":
             report = analyzer.analyze_poison(max_hops)
         elif method == "haircut":
             report = analyzer.analyze_haircut(max_hops)
-        else:
+        elif method == "pro_rata":
             report = analyzer.analyze_pro_rata(max_hops)
+        else:
+            report = analyzer.analyze_fifo(max_hops)
         
         if "error" not in report:
             results["comparison"][method] = {
@@ -319,75 +360,184 @@ def main():
         epilog="""
 Methodologies:
   poison   - Binary: any tainted input = 100% tainted outputs
-  haircut  - Proportional: taint% = tainted_value / total_value  
+  haircut  - Proportional: taint% = tainted_value / total_value
   pro_rata - Weighted distribution across outputs
+  fifo     - First-in-first-out: taint consumed sequentially by outputs
 
 Examples:
   taint_analysis.py <txid> --method haircut --hops 3
+  taint_analysis.py <txid> --method fifo --hops 2
   taint_analysis.py <txid> --compare
         """,
         formatter_class=argparse.RawDescriptionHelpFormatter
     )
     parser.add_argument("txid", help="Source transaction ID (the 'dirty' funds)")
-    parser.add_argument("--method", choices=["poison", "haircut", "pro_rata"], 
+    parser.add_argument("--method", choices=["poison", "haircut", "pro_rata", "fifo"],
                         default="haircut", help="Taint methodology")
-    parser.add_argument("--hops", type=int, default=2, help="Max hops to trace (default: 2)")
+    parser.add_argument("--hops", type=int, default=None, help="Max hops to trace (will prompt if not specified)")
     parser.add_argument("--max-txs", type=int, default=30, help="Max transactions to analyze")
     parser.add_argument("--label", default="Tainted Source", help="Label for source")
     parser.add_argument("--compare", action="store_true", help="Compare all methodologies")
-    parser.add_argument("--json", action="store_true", help="Output raw JSON")
-    
+    parser.add_argument("--json", action="store_true", help="(Deprecated) Output raw JSON. Use --output-format json instead.")
+    parser.add_argument("--output-format", choices=["text", "json", "csv", "markdown"],
+                        default="text", help="Output format (default: text)")
+    parser.add_argument("--visualize", action="store_true", help="Show ASCII visualization")
+    parser.add_argument("--audit-dir", nargs="?", const="./audit_logs",
+                        default=None, metavar="DIR",
+                        help="Enable audit logging to DIR (default: ./audit_logs)")
+    parser.add_argument("--min-confidence", type=float, default=0.0,
+                        help="Minimum confidence score to include in output (0.0-1.0)")
+    parser.add_argument("-o", "--output-file", help="Write output to file instead of stdout")
+
     args = parser.parse_args()
-    
+
+    if args.hops is None:
+        while True:
+            try:
+                hops_input = input("How many hops deep? [default: 2]: ").strip()
+                if hops_input == "":
+                    args.hops = 2
+                    break
+                args.hops = int(hops_input)
+                if args.hops < 0:
+                    print("Please enter a non-negative number.")
+                    continue
+                break
+            except ValueError:
+                print("Please enter a valid number.")
+
+    # --json is a deprecated shortcut for --output-format json
+    output_format = args.output_format
+    if args.json:
+        output_format = "json"
+
     if args.compare:
         result = compare_methodologies(args.txid, args.hops)
-        if args.json:
-            print(json.dumps(result, indent=2))
-        else:
-            print(f"\n📊 Taint Methodology Comparison")
-            print(f"   Source: {args.txid[:20]}...")
-            print(f"   Max hops: {args.hops}\n")
-            print(f"   {'Method':<12} {'Tainted BTC':<15} {'Outputs':<10} {'TXs':<6}")
-            print(f"   {'-'*45}")
+        if output_format == "json":
+            output_str = json.dumps(result, indent=2)
+        elif output_format == "csv":
+            # For compare mode, build a simple CSV of the comparison table
+            from exports.csv_export import export_csv as _csv
+            import csv as _csv_mod, io as _io
+            buf = _io.StringIO()
+            writer = _csv_mod.writer(buf)
+            writer.writerow(["method", "total_tainted_btc", "tainted_outputs", "txs_analyzed"])
             for method, data in result.get("comparison", {}).items():
-                print(f"   {method:<12} {data['total_tainted_btc']:<15.8f} {data['tainted_outputs']:<10} {data['txs_analyzed']:<6}")
+                writer.writerow([method, data["total_tainted_btc"],
+                                 data["tainted_outputs"], data["txs_analyzed"]])
+            output_str = buf.getvalue().rstrip("\n")
+        elif output_format == "markdown":
+            lines = [
+                "# Taint Methodology Comparison",
+                "",
+                f"Source: `{args.txid}`",
+                f"Max hops: {args.hops}",
+                "",
+                "| Method | Tainted BTC | Outputs | TXs |",
+                "|--------|-------------|---------|-----|",
+            ]
+            for method, data in result.get("comparison", {}).items():
+                lines.append(
+                    f"| {method} | {data['total_tainted_btc']:.8f} "
+                    f"| {data['tainted_outputs']} | {data['txs_analyzed']} |"
+                )
+            output_str = "\n".join(lines)
+        else:
+            lines = [
+                f"\nTaint Methodology Comparison",
+                f"   Source: {args.txid[:20]}...",
+                f"   Max hops: {args.hops}\n",
+                f"   {'Method':<12} {'Tainted BTC':<15} {'Outputs':<10} {'TXs':<6}",
+                f"   {'-'*45}",
+            ]
+            for method, data in result.get("comparison", {}).items():
+                lines.append(f"   {method:<12} {data['total_tainted_btc']:<15.8f} {data['tainted_outputs']:<10} {data['txs_analyzed']:<6}")
+            output_str = "\n".join(lines)
+
+        if args.output_file:
+            with open(args.output_file, 'w') as f:
+                f.write(output_str + "\n")
+            print(f"Output written to {args.output_file}")
+        else:
+            print(output_str)
+
+        # Audit logging for compare mode
+        if args.audit_dir:
+            from audit import AuditLogger
+            audit = AuditLogger(log_dir=args.audit_dir)
+            audit.log_analysis(
+                txid=args.txid,
+                methodology="compare",
+                hops=args.hops,
+                result_summary=result.get("comparison", {}),
+            )
         return
-    
+
     analyzer = TaintAnalyzer(args.txid, args.label)
-    
+
     if args.method == "poison":
         result = analyzer.analyze_poison(args.hops, args.max_txs)
     elif args.method == "haircut":
         result = analyzer.analyze_haircut(args.hops, args.max_txs)
-    else:
+    elif args.method == "pro_rata":
         result = analyzer.analyze_pro_rata(args.hops, args.max_txs)
-    
+    else:
+        result = analyzer.analyze_fifo(args.hops, args.max_txs)
+
     if "error" in result:
         print(f"Error: {result['error']}", file=sys.stderr)
         sys.exit(1)
-    
-    if args.json:
-        print(json.dumps(result, indent=2))
+
+    # Apply --min-confidence filter (output-stage only, does not affect analysis)
+    if args.min_confidence > 0.0:
+        result["tainted_outputs"] = [
+            o for o in result["tainted_outputs"]
+            if o.get("confidence", 0.0) >= args.min_confidence
+        ]
+
+    # Dispatch to the appropriate exporter
+    if output_format == "json":
+        output_str = json.dumps(result, indent=2)
+    elif output_format == "csv":
+        from exports.csv_export import export_csv
+        output_str = export_csv(result).rstrip("\n")
+    elif output_format == "markdown":
+        from exports.markdown_export import export_markdown
+        output_str = export_markdown(result)
     else:
-        print(f"\n🔍 Taint Analysis Report")
-        print(f"   Methodology: {result['methodology'].upper()}")
-        print(f"   Source: {result['source_txid'][:20]}...")
-        print(f"\n📈 Summary:")
-        s = result['summary']
-        print(f"   Transactions analyzed: {s['transactions_analyzed']}")
-        print(f"   Tainted outputs found: {s['tainted_outputs']}")
-        print(f"   Total tainted value:   {s['total_tainted_btc']:.8f} BTC")
-        print(f"   Max hop reached:       {s['max_hop_reached']}")
-        
-        if result['by_hop']:
-            print(f"\n📊 By Hop:")
-            for hop, data in result['by_hop'].items():
-                print(f"   Hop {hop}: {data['count']} outputs, {data['total_btc']:.8f} BTC, avg taint: {data['avg_taint_pct']}%")
-        
-        if result['top_tainted_addresses']:
-            print(f"\n🎯 Top Tainted Addresses:")
-            for i, addr in enumerate(result['top_tainted_addresses'][:5], 1):
-                print(f"   {i}. {addr['address']} — {addr['tainted_btc']:.8f} BTC")
+        from exports.text_export import export_text
+        output_str = export_text(result)
+
+        # ASCII taint map visualization (text mode only)
+        if args.visualize and result.get('tainted_outputs'):
+            from visualization import render_taint_map
+            map_entries = []
+            for o in result['tainted_outputs']:
+                map_entries.append({
+                    "hop": o.get("hop", 0),
+                    "address": o.get("address", "unknown"),
+                    "taint_pct": o.get("taint_percent", 0.0),
+                    "value": o.get("value_sat", 0),
+                })
+            output_str += f"\n{render_taint_map(map_entries)}"
+
+    if args.output_file:
+        with open(args.output_file, 'w') as f:
+            f.write(output_str + "\n")
+        print(f"Output written to {args.output_file}")
+    else:
+        print(output_str)
+
+    # Audit logging for single-methodology analysis
+    if args.audit_dir:
+        from audit import AuditLogger
+        audit = AuditLogger(log_dir=args.audit_dir)
+        audit.log_analysis(
+            txid=args.txid,
+            methodology=args.method,
+            hops=args.hops,
+            result_summary=result.get("summary", {}),
+        )
 
 
 if __name__ == "__main__":

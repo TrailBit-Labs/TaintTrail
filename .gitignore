@@ -13,11 +13,11 @@ venv/
 
 # Analysis results (may contain sensitive data)
 results/
-exports/
 investigations/
 *.pdf
 *.json
 !.claude/settings.json
+!data/sample_tx.json
 
 # Logs
 *.log
