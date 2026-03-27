@@ -1,12 +1,16 @@
-# Bitcoin Taint Analysis Tool
+# TaintTrail
 
-An educational Bitcoin taint analysis tool that traces funds through the transaction graph using multiple methodologies.
+Trace tainted Bitcoin through the transaction graph using four competing methodologies — side by side.
 
-Built for the **Bitcoin Heuristics Newsletter** and **TrailBit** research.
+Built by **[TrailBit Labs](https://github.com/TrailBit-Labs)** for the **[Bitcoin Heuristics Newsletter](https://trailbit.substack.com)**.
+
+> Companion tool to **[DustLine](https://github.com/TrailBit-Labs/DustLine)** — which estimates the cost of tracing an address. TaintTrail answers the next question: *how tainted is it, and according to whom?*
 
 ## What It Does
 
-Takes a Bitcoin transaction ID, fetches transaction data from [mempool.space](https://mempool.space), and traces how tainted funds propagate through subsequent transactions using BFS graph traversal.
+Give TaintTrail any Bitcoin transaction ID. It fetches transaction data from [mempool.space](https://mempool.space), then traces how tainted funds propagate through subsequent transactions using BFS graph traversal — across four different taint models simultaneously.
+
+The same transaction scored by four models can return 100%, 40%, 28%, or 12% taint. There is no industry standard. TaintTrail makes that visible.
 
 ## Quick Start
 
@@ -28,12 +32,12 @@ No dependencies beyond Python 3.7+ standard library.
 
 ## Methodologies
 
-| Method | How It Works |
-|--------|-------------|
-| **Poison** | Binary — any tainted input means 100% tainted outputs |
-| **Haircut** | Proportional — taint% = tainted value / total input value, applied uniformly |
-| **Pro-rata** | Weighted — taint distributed proportional to each output's share of total value |
-| **FIFO** | Sequential — tainted sats consumed by outputs in order until exhausted |
+| Method | How It Works | Typical Use |
+|--------|-------------|-------------|
+| **Poison** | Binary — any tainted input means 100% tainted outputs | Most conservative; law enforcement |
+| **Haircut** | Proportional — taint% = tainted value / total input value, applied uniformly | Most common in commercial tools |
+| **Pro-rata** | Weighted — taint distributed proportional to each output's share of total value | Academic research |
+| **FIFO** | Sequential — tainted sats consumed by outputs in order until exhausted | Tax accounting contexts |
 
 ```bash
 python3 taint_analysis.py <txid> --method poison --hops 2
@@ -63,13 +67,15 @@ python3 taint_analysis.py <txid> --visualize
 python3 taint_analysis.py <txid> -o report.txt
 ```
 
-## Other Features
+## Features
 
+- **Side-by-side comparison** — `--compare` runs all four models on the same transaction
 - **Confidence scoring** — decay by hop distance, mixing penalty, fan-out penalty
 - **Risk scoring** — critical/high/medium/low/minimal based on taint%, confidence, and proximity
 - **Min-confidence filter** — `--min-confidence 0.3` to focus on high-confidence results
 - **Audit logging** — `--audit-dir ./logs/` writes JSONL logs for each analysis run
-- **Interactive hops** — omit `--hops` and you'll be prompted
+- **Multiple export formats** — text, JSON, CSV, markdown
+- **ASCII visualization** — flow charts and taint maps in the terminal
 
 ## Project Structure
 
@@ -89,6 +95,14 @@ python3 taint_analysis.py <txid> -o report.txt
 └── demo_taint_analysis.sh  # Demo script
 ```
 
+## Why This Exists
+
+Commercial blockchain forensics tools (Chainalysis, Elliptic, Crystal) don't publish which taint model they use. A compliance officer making a freeze/release decision based on a "3% taint score" has no way to know whether that 3% was calculated using haircut (where 3% means proportional exposure) or poison (where any contact means 100%).
+
+TaintTrail makes the methodology transparent. Run all four models. See how the scores diverge. Decide for yourself.
+
+The full analysis is in [Issue 4 of the Bitcoin Heuristics Newsletter](https://trailbit.substack.com).
+
 ## Methodology References
 
 Based on ideas from:
@@ -96,16 +110,23 @@ Based on ideas from:
 - Ron & Shamir (2012) — "Quantitative Analysis of Bitcoin"
 - Meiklejohn et al. (2013) — "A Fistful of Bitcoins"
 
+## TrailBit Labs Forensics Toolkit
+
+| Tool | What It Does |
+|------|-------------|
+| **[DustLine](https://github.com/TrailBit-Labs/DustLine)** | Estimates the cost of tracing a Bitcoin address |
+| **[TaintTrail](https://github.com/TrailBit-Labs/TaintTrail)** | Traces taint propagation using four competing models |
+
 ## Disclaimer
 
-This is an educational tool for learning about blockchain analysis. It is not professional forensic software. Results should not be treated as accurate or authoritative. Use it to learn, experiment, and explore — do whatever you want with it.
+This is an educational tool for learning about blockchain analysis. It is not professional forensic software. Results should not be treated as accurate or authoritative.
 
 Not for unauthorized surveillance or illegal activities.
 
 ## License
 
-Educational use. Do what you want with it.
+MIT License. See [LICENSE](LICENSE) for details.
 
 ---
 
-*Built for the Bitcoin Heuristics Newsletter*
+*Built by [TrailBit Labs](https://github.com/TrailBit-Labs) for the [Bitcoin Heuristics Newsletter](https://trailbit.substack.com)*
