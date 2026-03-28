@@ -4,8 +4,6 @@ Confidence score (0.0-1.0): how reliable is this taint attribution?
 Risk score (critical/high/medium/low/minimal): compliance risk level.
 """
 
-import math
-
 
 def calculate_confidence(
     hop: int,

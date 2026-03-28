@@ -16,7 +16,7 @@ import urllib.request
 import sys
 from collections import defaultdict
 from dataclasses import dataclass, asdict
-from typing import Optional
+import re
 from datetime import datetime
 from methodologies import METHODOLOGIES
 from scoring import calculate_confidence, calculate_risk_score
@@ -37,7 +37,7 @@ class TaintedOutput:
     risk: str = "minimal"
 
 
-def fetch_tx(txid: str) -> Optional[dict]:
+def fetch_tx(txid: str) -> dict:
     """Fetch transaction from mempool.space API."""
     url = f"https://mempool.space/api/tx/{txid}"
     try:
@@ -174,7 +174,12 @@ class TaintAnalyzer:
                 for vout_idx, spend in enumerate(outspends):
                     if not spend.get("spent"):
                         continue
-                    
+
+                    # Only follow spends of tainted outputs
+                    out_key = self._output_key(txid, vout_idx)
+                    if out_key not in self.tainted_outputs:
+                        continue
+
                     spending_txid = spend.get("txid")
                     if not spending_txid or spending_txid in self.analyzed_txs:
                         continue
@@ -203,20 +208,18 @@ class TaintAnalyzer:
         # Calculate input taint
         tainted_input_value = 0
         total_input_value = 0
-        max_input_taint = 0.0
-        
+
         for vin in inputs:
             prev_txid = vin.get("txid")
             prev_vout = vin.get("vout", 0)
             input_value = vin.get("prevout", {}).get("value", 0)
             total_input_value += input_value
-            
+
             # Check if this input is from a tainted output
             key = self._output_key(prev_txid, prev_vout)
             if key in self.tainted_outputs:
                 tainted = self.tainted_outputs[key]
                 tainted_input_value += input_value * (tainted.taint_percent / 100)
-                max_input_taint = max(max_input_taint, tainted.taint_percent)
         
         if total_input_value == 0:
             return
@@ -390,6 +393,10 @@ Examples:
     parser.add_argument("-o", "--output-file", help="Write output to file instead of stdout")
 
     args = parser.parse_args()
+
+    if not re.fullmatch(r"[0-9a-fA-F]{64}", args.txid):
+        print("Error: txid must be a 64-character hex string", file=sys.stderr)
+        sys.exit(1)
 
     if args.hops is None:
         while True:

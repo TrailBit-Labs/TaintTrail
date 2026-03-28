@@ -1,6 +1,6 @@
 """Markdown export formatter for taint analysis reports."""
 
-from datetime import datetime
+from datetime import datetime, timezone
 
 
 def export_markdown(report: dict) -> str:
@@ -17,7 +17,7 @@ def export_markdown(report: dict) -> str:
     # Title
     lines.append("# Taint Analysis Report")
     lines.append("")
-    lines.append(f"Generated: {datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')}")
+    lines.append(f"Generated: {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M UTC')}")
     lines.append("")
 
     # Summary table
