@@ -76,9 +76,23 @@ class TaintAnalyzer:
         self.tainted_outputs: dict[str, TaintedOutput] = {}  # key = txid:vout
         self.analyzed_txs: set[str] = set()
         self.trace_log: list[dict] = []
-    
+        self._tx_cache: dict[str, dict] = {}
+        self._outspends_cache: dict[str, list] = {}
+
     def _output_key(self, txid: str, vout: int) -> str:
         return f"{txid}:{vout}"
+
+    def _fetch_tx(self, txid: str) -> dict:
+        """Fetch transaction, using cache to avoid redundant API calls."""
+        if txid not in self._tx_cache:
+            self._tx_cache[txid] = fetch_tx(txid)
+        return self._tx_cache[txid]
+
+    def _fetch_outspends(self, txid: str) -> "list[dict]":
+        """Fetch outspends, using cache to avoid redundant API calls."""
+        if txid not in self._outspends_cache:
+            self._outspends_cache[txid] = fetch_outspends(txid)
+        return self._outspends_cache[txid]
     
     def analyze_poison(self, max_hops: int = 3, max_txs: int = 50) -> dict:
         """
@@ -118,7 +132,7 @@ class TaintAnalyzer:
         self.trace_log.clear()
         
         # Initialize: all outputs of source tx are 100% tainted
-        source_tx = fetch_tx(self.source_txid)
+        source_tx = self._fetch_tx(self.source_txid)
         if not source_tx or "error" in source_tx:
             return {"error": f"Cannot fetch source tx: {source_tx.get('error', 'Unknown')}"}
         
@@ -169,7 +183,7 @@ class TaintAnalyzer:
             
             for txid in current_hop_txs:
                 # Find which outputs were spent
-                outspends = fetch_outspends(txid)
+                outspends = self._fetch_outspends(txid)
                 
                 for vout_idx, spend in enumerate(outspends):
                     if not spend.get("spent"):
@@ -198,7 +212,7 @@ class TaintAnalyzer:
     
     def _propagate_taint(self, txid: str, methodology: str, hop: int):
         """Propagate taint through a transaction based on methodology."""
-        tx = fetch_tx(txid)
+        tx = self._fetch_tx(txid)
         if not tx or "error" in tx:
             return
         
