@@ -57,7 +57,8 @@ class TestProRataMethodology(unittest.TestCase):
         )
         self.assertEqual(result, [50.0, 50.0])
 
-    def test_uneven_outputs_different_from_haircut_in_tracking(self):
+    def test_fully_tainted_input_taints_all_outputs(self):
+        """When all input value is tainted, all outputs are 100% regardless of size."""
         outputs = [{"value": 80000}, {"value": 20000}]
         result = pro_rata_taint(
             tainted_input_value=100000,
@@ -65,6 +66,28 @@ class TestProRataMethodology(unittest.TestCase):
             outputs=outputs,
         )
         self.assertEqual(result, [100.0, 100.0])
+
+
+class TestProRataVsHaircut(unittest.TestCase):
+    """Pro-rata divides by total_output_value (excludes fee);
+    haircut divides by total_input_value (includes fee).
+    When fees are non-trivial, the percentages diverge."""
+
+    def test_pro_rata_higher_than_haircut_due_to_fee(self):
+        outputs = [{"value": 45000}, {"value": 45000}]
+        tainted = 50000
+        total_input = 100000  # 10000 sat fee (total_output=90000)
+
+        h = haircut_taint(tainted, total_input, outputs)
+        p = pro_rata_taint(tainted, total_input, outputs)
+
+        # Haircut: 50000/100000 = 50%
+        self.assertEqual(h, [50.0, 50.0])
+        # Pro-rata: 50000/90000 ≈ 55.56%
+        self.assertAlmostEqual(p[0], 55.56, places=1)
+        self.assertAlmostEqual(p[1], 55.56, places=1)
+        # Pro-rata is higher because fee doesn't absorb taint
+        self.assertGreater(p[0], h[0])
 
 
 if __name__ == "__main__":
